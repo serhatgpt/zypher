@@ -321,9 +321,60 @@ button {
   color: var(--color-text-sub);
 }
 
+.zypher-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.zypher-skill-card {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: var(--glass-border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.zypher-skill-card strong {
+  color: var(--color-accent-primary);
+  font-size: 1.05rem;
+}
+
+.zypher-skill-card p,
+.zypher-skill-card li {
+  font-size: 0.95rem;
+}
+
+.zypher-skill-card textarea {
+  width: 100%;
+  margin: var(--spacing-sm) 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: var(--glass-border);
+  background: var(--color-bg);
+  color: var(--color-text-main);
+  font: inherit;
+  resize: vertical;
+}
+
+.zypher-skill-card button {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-secondary);
+  color: var(--color-bg);
+  font-weight: 800;
+}
+
+.zypher-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--color-accent-primary);
+  font-weight: 700;
+}
+
 @media (max-width: 700px) {
   .zypher-word-form,
-  .zypher-task {
+  .zypher-task,
+  .zypher-skill-grid {
     grid-template-columns: 1fr;
   }
 }

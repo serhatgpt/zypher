@@ -15,7 +15,7 @@
  */
 
 import missionsData from '../data/missions.json';
-import { addWord, getLearningDashboard } from '../data/user-learning.js';
+import { addWord, getLearningDashboard, recordSkillPractice } from '../data/user-learning.js';
 
 class ViewMissions extends HTMLElement {
   connectedCallback() {
@@ -208,6 +208,23 @@ class ViewMissions extends HTMLElement {
             <div><strong>Seviye tahmini:</strong> ${dashboard.plan.level}</div>
             ${roadmapHtml}
           </div>
+          <div class="zypher-skill-grid">
+            <article class="zypher-skill-card">
+              <strong>Reading</strong>
+              <p>${dashboard.readingExercise.paragraph}</p>
+              <ul>
+                ${dashboard.readingExercise.questions.map(question => `<li>${question}</li>`).join('')}
+              </ul>
+              <button id="reading-done" type="button">Reading yaptım</button>
+            </article>
+            <article class="zypher-skill-card">
+              <strong>Writing</strong>
+              <p>${dashboard.writingExercise.prompt}</p>
+              <textarea id="writing-response" rows="4" placeholder="Cümlelerini buraya yaz..."></textarea>
+              <button id="writing-save" type="button">Writing kaydet</button>
+            </article>
+          </div>
+          <p id="skill-status" class="zypher-status"></p>
         </section>
 
         <div style="margin-bottom: var(--spacing-md); text-align: center;">
@@ -374,6 +391,31 @@ class ViewMissions extends HTMLElement {
       event.preventDefault();
       addWord(wordInput.value);
       this.connectedCallback();
+    });
+
+    const skillStatus = this.querySelector('#skill-status');
+    this.querySelector('#reading-done').addEventListener('click', () => {
+      recordSkillPractice({
+        type: 'reading',
+        focusWords: dashboard.plan.focusWords,
+        response: dashboard.readingExercise.paragraph,
+      });
+      skillStatus.textContent = 'Reading kaydedildi. Roadmap bunu dikkate alacak.';
+    });
+
+    this.querySelector('#writing-save').addEventListener('click', () => {
+      const response = this.querySelector('#writing-response').value;
+      if (!response.trim()) {
+        skillStatus.textContent = 'Önce kısa birkaç cümle yaz.';
+        return;
+      }
+      recordSkillPractice({
+        type: 'writing',
+        focusWords: dashboard.plan.focusWords,
+        response,
+      });
+      skillStatus.textContent = 'Writing kaydedildi. Bir sonraki pratikte tekrar bakacağız.';
+      this.querySelector('#writing-response').value = '';
     });
 
     // Add change listeners to persist immediately

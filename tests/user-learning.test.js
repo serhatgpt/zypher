@@ -6,6 +6,9 @@ import {
   buildPracticePlan,
   updateWordMastery,
   createSessionRecord,
+  buildReadingExercise,
+  buildWritingExercise,
+  recordSkillPractice,
 } from '../src/data/user-learning.js';
 
 test('buildPracticePlan keeps the app simple with speaking, reading, and writing tasks', () => {
@@ -61,4 +64,40 @@ test('createSessionRecord normalizes Gemini tool output for the summary and road
   assert.deepEqual(record.usedTargetWords, ['although']);
   assert.deepEqual(record.nextPractice, ['Write 3 sentences']);
   assert.ok(record.completedAt);
+});
+
+test('buildReadingExercise creates a short level-aware paragraph and comprehension question', () => {
+  const exercise = buildReadingExercise(['although'], 'A2');
+
+  assert.equal(exercise.type, 'reading');
+  assert.match(exercise.paragraph, /although/i);
+  assert.equal(exercise.questions.length, 2);
+  assert.match(exercise.questions[0], /although/i);
+});
+
+test('buildWritingExercise asks for simple sentences using focus words', () => {
+  const exercise = buildWritingExercise(['although', 'however'], 'A2');
+
+  assert.equal(exercise.type, 'writing');
+  assert.match(exercise.prompt, /although/i);
+  assert.match(exercise.prompt, /however/i);
+  assert.equal(exercise.minSentences, 3);
+});
+
+test('recordSkillPractice stores reading and writing attempts without changing app complexity', () => {
+  const storage = new Map();
+  const fakeStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+
+  const nextState = recordSkillPractice({
+    type: 'writing',
+    focusWords: ['although'],
+    response: 'Although it was late, I studied English.',
+  }, fakeStorage);
+
+  assert.equal(nextState.skillPractice.length, 1);
+  assert.equal(nextState.skillPractice[0].type, 'writing');
+  assert.deepEqual(nextState.skillPractice[0].focusWords, ['although']);
 });

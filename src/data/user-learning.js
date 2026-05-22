@@ -3,6 +3,7 @@ const STORAGE_KEY = 'zypher_learning_state';
 const DEFAULT_STATE = {
   words: [],
   sessions: [],
+  skillPractice: [],
 };
 
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
@@ -85,6 +86,41 @@ export function buildPracticePlan(snapshot) {
   };
 }
 
+export function buildReadingExercise(focusWords = ['daily English'], level = 'A1') {
+  const words = normalizeArray(focusWords).length ? normalizeArray(focusWords) : ['daily English'];
+  const primary = words[0];
+  const second = words[1] || 'because';
+  const paragraphByLevel = {
+    A1: `I study English every day. I try to use ${primary} in one simple sentence. This helps me remember it.`,
+    A2: `I wanted to speak more naturally, although I still made small mistakes. I practiced ${primary} in a short conversation and used ${second} to connect my ideas.`,
+    B1: `Although learning English can feel slow, consistent practice makes progress visible. When I use ${primary} in speaking, reading, and writing, I remember it more easily.`,
+  };
+
+  return {
+    type: 'reading',
+    level,
+    focusWords: words,
+    paragraph: paragraphByLevel[level] || paragraphByLevel.A2,
+    questions: [
+      `What does “${primary}” do in this paragraph?`,
+      'Write one similar sentence about your own life.',
+    ],
+  };
+}
+
+export function buildWritingExercise(focusWords = ['daily English'], level = 'A1') {
+  const words = normalizeArray(focusWords).length ? normalizeArray(focusWords) : ['daily English'];
+  const minSentences = level === 'A1' ? 2 : 3;
+
+  return {
+    type: 'writing',
+    level,
+    focusWords: words,
+    minSentences,
+    prompt: `${words.join(', ')} kelimelerini kullanarak en az ${minSentences} kısa İngilizce cümle yaz. Basit, doğal ve kendi hayatından olsun.`,
+  };
+}
+
 export function updateWordMastery(word, session) {
   const term = word.term;
   const used = normalizeArray(session.usedTargetWords).some((item) => item.toLowerCase() === term.toLowerCase());
@@ -136,6 +172,7 @@ export function loadLearningState(storage = globalThis.localStorage) {
     return {
       words: normalizeArray(parsed?.words),
       sessions: normalizeArray(parsed?.sessions),
+      skillPractice: normalizeArray(parsed?.skillPractice),
     };
   } catch (error) {
     console.warn('Failed to load learning state', error);
@@ -169,6 +206,23 @@ export function recordCompletedSession(args, storage = globalThis.localStorage) 
   const nextState = {
     words: nextWords,
     sessions: [...state.sessions, session].slice(-30),
+    skillPractice: state.skillPractice,
+  };
+  return saveLearningState(nextState, storage);
+}
+
+export function recordSkillPractice(practice, storage = globalThis.localStorage) {
+  const state = loadLearningState(storage);
+  const record = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    completedAt: new Date().toISOString(),
+    type: practice.type,
+    focusWords: normalizeArray(practice.focusWords),
+    response: String(practice.response || '').trim(),
+  };
+  const nextState = {
+    ...state,
+    skillPractice: [...state.skillPractice, record].slice(-30),
   };
   return saveLearningState(nextState, storage);
 }
@@ -177,5 +231,7 @@ export function getLearningDashboard(storage = globalThis.localStorage) {
   const state = loadLearningState(storage);
   const snapshot = createLearnerSnapshot(state.words, state.sessions);
   const plan = buildPracticePlan(snapshot);
-  return { state, snapshot, plan };
+  const readingExercise = buildReadingExercise(plan.focusWords, plan.level);
+  const writingExercise = buildWritingExercise(plan.focusWords, plan.level);
+  return { state, snapshot, plan, readingExercise, writingExercise };
 }
