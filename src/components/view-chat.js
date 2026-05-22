@@ -23,6 +23,7 @@ import {
 } from "../lib/gemini-live/geminilive.js";
 import { AudioStreamer, AudioPlayer } from "../lib/gemini-live/mediaUtils.js";
 import { recordCompletedSession, getLearningDashboard } from "../data/user-learning.js";
+import { getAuthToken, recordPracticeInDb } from "../data/learning-api.js";
 
 class ViewChat extends HTMLElement {
   constructor() {
@@ -439,6 +440,17 @@ class ViewChat extends HTMLElement {
 
         // Navigate to summary
         const session = recordCompletedSession(args);
+        if (getAuthToken()) {
+          recordPracticeInDb({
+            type: 'speaking',
+            score: args.score,
+            used_target_words: session.usedTargetWords,
+            missed_target_words: session.missedTargetWords,
+            mistakes: session.mistakes,
+            feedback: session.notes,
+            next_practice: session.nextPractice,
+          }).catch((error) => console.warn('DB session sync skipped', error));
+        }
         const dashboard = getLearningDashboard();
         const result = {
           score: args.score.toString(),

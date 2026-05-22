@@ -15,11 +15,14 @@
  */
 
 import missionsData from '../data/missions.json';
-import { addWord, getLearningDashboard, recordSkillPractice } from '../data/user-learning.js';
+import { addWord, getLearningDashboard, recordSkillPractice, syncLearningStateFromDb } from '../data/user-learning.js';
+import { clearAuth, createWordInDb, getAuthEmail, getAuthToken, getLearningMe, recordPracticeInDb, registerOrLogin } from '../data/learning-api.js';
 
 class ViewMissions extends HTMLElement {
   connectedCallback() {
     const dashboard = getLearningDashboard();
+    const authEmail = getAuthEmail();
+    const isDbConnected = Boolean(getAuthToken());
     const focusWords = dashboard.plan.focusWords.filter(word => word !== 'daily English');
     const roadmapHtml = dashboard.plan.tasks.map(task => `
       <div class="zypher-task">
@@ -192,6 +195,25 @@ class ViewMissions extends HTMLElement {
                 </div>
             </div>
         </div>
+
+        <section class="zypher-panel glass-panel">
+          <div>
+            <p class="zypher-kicker">Zypher Account</p>
+            <h2>Basit giriş</h2>
+            <p>${isDbConnected ? `${authEmail} ile DB’ye bağlısın.` : 'Email + şifre ile giriş yap; kelimeler DB’ye kaydolsun. Giriş yapmadan local demo çalışır.'}</p>
+          </div>
+          ${isDbConnected ? `
+            <button id="logout-btn" class="zypher-secondary-btn" type="button">Çıkış yap</button>
+          ` : `
+            <form id="auth-form" class="zypher-auth-form">
+              <input id="auth-email" type="email" placeholder="email" autocomplete="email" />
+              <input id="auth-password" type="password" placeholder="şifre" autocomplete="current-password" />
+              <button data-mode="login" type="submit">Giriş</button>
+              <button data-mode="register" type="button" id="register-btn">Kayıt</button>
+            </form>
+          `}
+          <p id="auth-status" class="zypher-status"></p>
+        </section>
 
         <section class="zypher-panel glass-panel">
           <div>
@@ -385,35 +407,107 @@ class ViewMissions extends HTMLElement {
 
     updateModeUI();
 
+    const authStatus = this.querySelector('#auth-status');
+    const authForm = this.querySelector('#auth-form');
+    const registerBtn = this.querySelector('#register-btn');
+    const logoutBtn = this.querySelector('#logout-btn');
+
+    const submitAuth = async (mode) => {
+      try {
+        const email = this.querySelector('#auth-email').value;
+        const password = this.querySelector('#auth-password').value;
+        authStatus.textContent = 'Bağlanıyor...';
+        await registerOrLogin(email, password, mode);
+        const dbState = await getLearningMe();
+        syncLearningStateFromDb(dbState);
+        this.connectedCallback();
+      } catch (error) {
+        authStatus.textContent = error.message;
+      }
+    };
+
+    if (authForm) {
+      authForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitAuth('login');
+      });
+    }
+    if (registerBtn) {
+      registerBtn.addEventListener('click', () => submitAuth('register'));
+    }
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        clearAuth();
+        this.connectedCallback();
+      });
+    }
+
     const wordForm = this.querySelector('#word-form');
     const wordInput = this.querySelector('#word-input');
-    wordForm.addEventListener('submit', (event) => {
+    wordForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      addWord(wordInput.value);
+      const term = wordInput.value;
+      if (!term.trim()) return;
+      addWord(term);
+      if (getAuthToken()) {
+        try {
+          await createWordInDb(term, dashboard.plan.level);
+        } catch (error) {
+          authStatus.textContent = `DB kaydı olmadı, local kaydedildi: ${error.message}`;
+        }
+      }
       this.connectedCallback();
     });
 
     const skillStatus = this.querySelector('#skill-status');
-    this.querySelector('#reading-done').addEventListener('click', () => {
-      recordSkillPractice({
+    this.querySelector('#reading-done').addEventListener('click', async () => {
+      const payload = {
         type: 'reading',
         focusWords: dashboard.plan.focusWords,
         response: dashboard.readingExercise.paragraph,
-      });
+      };
+      recordSkillPractice(payload);
+      if (getAuthToken()) {
+        try {
+          await recordPracticeInDb({
+            type: 'reading',
+            score: 0,
+            used_target_words: dashboard.plan.focusWords,
+            feedback: ['Reading practice completed'],
+            next_practice: [`Write 3 sentences with ${dashboard.plan.focusWords[0]}`],
+          });
+        } catch (error) {
+          console.warn('Reading sync skipped', error);
+        }
+      }
       skillStatus.textContent = 'Reading kaydedildi. Roadmap bunu dikkate alacak.';
     });
 
-    this.querySelector('#writing-save').addEventListener('click', () => {
+    this.querySelector('#writing-save').addEventListener('click', async () => {
       const response = this.querySelector('#writing-response').value;
       if (!response.trim()) {
         skillStatus.textContent = 'Önce kısa birkaç cümle yaz.';
         return;
       }
-      recordSkillPractice({
+      const payload = {
         type: 'writing',
         focusWords: dashboard.plan.focusWords,
         response,
-      });
+      };
+      recordSkillPractice(payload);
+      if (getAuthToken()) {
+        try {
+          await recordPracticeInDb({
+            type: 'writing',
+            score: 0,
+            used_target_words: dashboard.plan.focusWords,
+            feedback: ['Writing practice saved'],
+            next_practice: [`Use ${dashboard.plan.focusWords[0]} in speaking`],
+          });
+        } catch (error) {
+          console.warn('Writing sync skipped', error);
+        }
+      }
       skillStatus.textContent = 'Writing kaydedildi. Bir sonraki pratikte tekrar bakacağız.';
       this.querySelector('#writing-response').value = '';
     });

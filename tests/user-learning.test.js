@@ -2,14 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  createLearnerSnapshot,
   buildPracticePlan,
-  updateWordMastery,
-  createSessionRecord,
   buildReadingExercise,
   buildWritingExercise,
+  createLearnerSnapshot,
+  createSessionRecord,
   recordSkillPractice,
+  syncLearningStateFromDb,
+  updateWordMastery,
 } from '../src/data/user-learning.js';
+
+function createFakeStorage(initial = {}) {
+  const storage = new Map(Object.entries(initial));
+  return {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+}
 
 test('buildPracticePlan keeps the app simple with speaking, reading, and writing tasks', () => {
   const snapshot = createLearnerSnapshot([
@@ -85,11 +94,7 @@ test('buildWritingExercise asks for simple sentences using focus words', () => {
 });
 
 test('recordSkillPractice stores reading and writing attempts without changing app complexity', () => {
-  const storage = new Map();
-  const fakeStorage = {
-    getItem: (key) => storage.get(key) || null,
-    setItem: (key, value) => storage.set(key, value),
-  };
+  const fakeStorage = createFakeStorage();
 
   const nextState = recordSkillPractice({
     type: 'writing',
@@ -100,4 +105,28 @@ test('recordSkillPractice stores reading and writing attempts without changing a
   assert.equal(nextState.skillPractice.length, 1);
   assert.equal(nextState.skillPractice[0].type, 'writing');
   assert.deepEqual(nextState.skillPractice[0].focusWords, ['although']);
+});
+
+test('syncLearningStateFromDb hydrates local learning state from SQLite API shape', () => {
+  const fakeStorage = createFakeStorage({
+    zypher_learning_state: JSON.stringify({ words: [], sessions: [], skillPractice: [] }),
+  });
+
+  const nextState = syncLearningStateFromDb({
+    words: [{
+      id: 7,
+      term: 'although',
+      meaning_tr: 'rağmen / buna rağmen',
+      mastery_score: 52,
+      common_mistakes: ['wrong connector'],
+      next_review_at: '3 gün sonra',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }],
+  }, fakeStorage);
+
+  assert.equal(nextState.words.length, 1);
+  assert.equal(nextState.words[0].term, 'although');
+  assert.equal(nextState.words[0].mastery, 52);
+  assert.equal(nextState.words[0].nextReviewLabel, '3 gün sonra');
 });

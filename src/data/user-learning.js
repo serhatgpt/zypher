@@ -227,6 +227,30 @@ export function recordSkillPractice(practice, storage = globalThis.localStorage)
   return saveLearningState(nextState, storage);
 }
 
+export function syncLearningStateFromDb(dbState = {}, storage = globalThis.localStorage) {
+  const localState = loadLearningState(storage);
+  const dbWords = normalizeArray(dbState.words).map((word) => createWord(word.term, {
+    id: `db-${word.id}`,
+    note: word.meaning_tr || word.note || '',
+    mastery: word.mastery_score ?? word.mastery,
+    mistakes: word.common_mistakes || word.mistakes || [],
+    nextReviewLabel: word.next_review_at || word.nextReviewLabel || 'bugün',
+    createdAt: word.created_at || word.createdAt,
+    updatedAt: word.updated_at || word.updatedAt,
+  }));
+
+  const mergedByTerm = new Map();
+  [...localState.words, ...dbWords].forEach((word) => {
+    if (!word.term) return;
+    mergedByTerm.set(word.term.toLowerCase(), word);
+  });
+
+  return saveLearningState({
+    ...localState,
+    words: [...mergedByTerm.values()],
+  }, storage);
+}
+
 export function getLearningDashboard(storage = globalThis.localStorage) {
   const state = loadLearningState(storage);
   const snapshot = createLearnerSnapshot(state.words, state.sessions);

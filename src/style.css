@@ -260,6 +260,13 @@ button {
   gap: var(--spacing-sm);
 }
 
+.zypher-auth-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: var(--spacing-sm);
+}
+
+.zypher-auth-form input,
 .zypher-word-form input {
   width: 100%;
   padding: 14px 16px;
@@ -270,6 +277,8 @@ button {
   font: inherit;
 }
 
+.zypher-auth-form button,
+.zypher-secondary-btn,
 .zypher-word-form button {
   padding: 14px 18px;
   border-radius: var(--radius-md);
@@ -373,6 +382,7 @@ button {
 
 @media (max-width: 700px) {
   .zypher-word-form,
+  .zypher-auth-form,
   .zypher-task,
   .zypher-skill-grid {
     grid-template-columns: 1fr;

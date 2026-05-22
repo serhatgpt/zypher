@@ -22,7 +22,7 @@ import uuid
 import requests
 from typing import Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, Header
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +33,8 @@ from server.gemini_live import GeminiLive
 from server.fingerprint import generate_fingerprint
 from server.simple_tracker import simpletrack
 from server.config_utils import get_project_id
+from server.learning_db import LearningDB
+from server.openai_planner import create_learning_plan
 
 
 # Rate Limiting
@@ -65,6 +67,7 @@ DEV_MODE = os.getenv("DEV_MODE", "true") == "true"
 
 # Initialize FastAPI
 app = FastAPI()
+learning_db = LearningDB()
 
 # Initialize Recaptcha Validator
 recaptcha_validator = RecaptchaValidator(
@@ -148,6 +151,79 @@ async def get_status():
     return {
         "mode": mode,
         "missing": missing
+    }
+
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.split(" ", 1)[1]
+    user = learning_db.get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    return user
+
+
+@app.post("/api/user/register")
+async def register_user(request: Request):
+    data = await request.json()
+    try:
+        user = learning_db.create_user(data.get("email", ""), data.get("password", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=409, detail="User already exists")
+    token = learning_db.create_session_token(user["id"])
+    return {"user": user, "token": token}
+
+
+@app.post("/api/user/login")
+async def login_user(request: Request):
+    data = await request.json()
+    user = learning_db.verify_user(data.get("email", ""), data.get("password", ""))
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = learning_db.create_session_token(user["id"])
+    return {"user": user, "token": token}
+
+
+@app.get("/api/learning/me")
+async def get_learning_me(user=Depends(get_current_user)):
+    return {
+        "user": user,
+        "words": learning_db.list_words(user["id"]),
+        "roadmap": learning_db.list_roadmap(user["id"]),
+    }
+
+
+@app.post("/api/learning/words")
+async def create_learning_word(request: Request, user=Depends(get_current_user)):
+    data = await request.json()
+    term = data.get("term", "").strip()
+    if not term:
+        raise HTTPException(status_code=400, detail="term is required")
+    plan = create_learning_plan(term, data.get("level", "A2"))
+    word = learning_db.create_word(user["id"], term, plan)
+    return {
+        "word": word,
+        "learning_plan": plan,
+        "roadmap": learning_db.list_roadmap(user["id"]),
+    }
+
+
+@app.get("/api/learning/roadmap")
+async def get_learning_roadmap(user=Depends(get_current_user)):
+    return {"roadmap": learning_db.list_roadmap(user["id"])}
+
+
+@app.post("/api/learning/practice-sessions")
+async def create_practice_session(request: Request, user=Depends(get_current_user)):
+    data = await request.json()
+    session = learning_db.record_practice_session(user["id"], data)
+    return {
+        "session": session,
+        "words": learning_db.list_words(user["id"]),
+        "roadmap": learning_db.list_roadmap(user["id"]),
     }
 
 @app.get("/{full_path:path}")
