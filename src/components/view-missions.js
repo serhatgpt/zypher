@@ -15,9 +15,24 @@
  */
 
 import missionsData from '../data/missions.json';
+import { addWord, getLearningDashboard } from '../data/user-learning.js';
 
 class ViewMissions extends HTMLElement {
   connectedCallback() {
+    const dashboard = getLearningDashboard();
+    const focusWords = dashboard.plan.focusWords.filter(word => word !== 'daily English');
+    const roadmapHtml = dashboard.plan.tasks.map(task => `
+      <div class="zypher-task">
+        <strong>${task.type}</strong>
+        <span>${task.title}</span>
+      </div>
+    `).join('');
+    const wordChipsHtml = dashboard.state.words.length
+      ? dashboard.state.words.map(word => `
+        <span class="zypher-chip">${word.term} · ${word.mastery}% · ${word.nextReviewLabel}</span>
+      `).join('')
+      : '<span class="zypher-chip muted">Henüz kelime yok</span>';
+
     const options = `
             <option>🇬🇧 English</option>
             <option>🇩🇪 German</option>
@@ -178,9 +193,26 @@ class ViewMissions extends HTMLElement {
             </div>
         </div>
 
+        <section class="zypher-panel glass-panel">
+          <div>
+            <p class="zypher-kicker">Zypher Roadmap</p>
+            <h2>Basit plan, düzenli adaptasyon</h2>
+            <p>Kelime ekle; speaking, reading ve writing görevleri İngilizcene göre değişsin.</p>
+          </div>
+          <form id="word-form" class="zypher-word-form">
+            <input id="word-input" placeholder="Kelime/konu ekle: although, job interview..." autocomplete="off" />
+            <button type="submit">Ekle</button>
+          </form>
+          <div class="zypher-chip-row">${wordChipsHtml}</div>
+          <div class="zypher-roadmap">
+            <div><strong>Seviye tahmini:</strong> ${dashboard.plan.level}</div>
+            ${roadmapHtml}
+          </div>
+        </section>
+
         <div style="margin-bottom: var(--spacing-md); text-align: center;">
             <h2 style="font-size: 2.5rem; letter-spacing: -0.03em; margin-bottom: var(--spacing-xs);">Choose Your Quest</h2>
-            <p style="opacity: 0.7; font-size: 1.1rem;">Select a scenario to begin your immersive practice</p>
+            <p style="opacity: 0.7; font-size: 1.1rem;">Select a simple practice mission. Focus words: ${focusWords.join(', ') || 'add a word first'}</p>
         </div>
 
         <div class="missions-list mission-grid">
@@ -279,27 +311,25 @@ class ViewMissions extends HTMLElement {
     if (savedLang) {
       toSelect.value = savedLang;
     } else {
-      // Default practice to French if first time to avoid English/English default
       const options = Array.from(toSelect.options);
-      const frenchOption = options.find(o => o.text.includes('French'));
-      if (frenchOption) toSelect.value = frenchOption.text;
+      const englishOption = options.find(o => o.text.includes('English'));
+      if (englishOption) toSelect.value = englishOption.text;
     }
 
     // Default From language to English if not set
     if (savedFromLang) {
       fromSelect.value = savedFromLang;
     } else {
-      // Try to find English
       const options = Array.from(fromSelect.options);
-      const englishOption = options.find(o => o.text.includes('English'));
-      if (englishOption) fromSelect.value = englishOption.text;
+      const turkishOption = options.find(o => o.text.includes('Turkish'));
+      if (turkishOption) fromSelect.value = turkishOption.text;
     }
 
 
     // Mode Logic
     const modeImmersive = this.querySelector('#mode-immersive');
     const modeTeacher = this.querySelector('#mode-teacher');
-    let currentMode = localStorage.getItem('immergo_mode') || 'immergo_immersive'; // Default to immersive
+    let currentMode = localStorage.getItem('immergo_mode') || 'immergo_teacher'; // Default to teacher for adaptive feedback
 
     const updateModeUI = () => {
       const activeBorder = 'var(--color-accent-primary)';
@@ -337,6 +367,14 @@ class ViewMissions extends HTMLElement {
     });
 
     updateModeUI();
+
+    const wordForm = this.querySelector('#word-form');
+    const wordInput = this.querySelector('#word-input');
+    wordForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addWord(wordInput.value);
+      this.connectedCallback();
+    });
 
     // Add change listeners to persist immediately
     fromSelect.addEventListener('change', () => {
@@ -423,7 +461,8 @@ class ViewMissions extends HTMLElement {
             mission: mission,
             language: selectedToLang,
             fromLanguage: selectedFromLang,
-            mode: selectedMode
+            mode: selectedMode,
+            targetWords: getLearningDashboard().plan.focusWords.filter(word => word !== 'daily English')
           }
         }));
       });

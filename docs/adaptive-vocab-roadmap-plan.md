@@ -2,7 +2,7 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Transform Zypher from a live roleplay demo into a voice-first English learning app where Turkish-speaking users add vocabulary, practice it in live AI conversations, and receive an adaptive roadmap based on mistakes.
+**Goal:** Transform Zypher from a live roleplay demo into a simple English learning app where Turkish-speaking users add vocabulary/topics, practice through speaking first, and receive a lightweight adaptive roadmap that also includes reading and writing tasks based on their mistakes.
 
 **Architecture:** Keep the current Vite + vanilla Web Components frontend and FastAPI + Gemini Live backend. Build the MVP local-first using `localStorage` so the product can be tested without auth/database setup, then add backend persistence in a later phase. Extend the existing Gemini Live tool-call flow (`complete_mission`) instead of introducing a second LLM pipeline.
 
@@ -72,7 +72,7 @@ The first complete MVP is done when:
    - mastery delta
 5. Summary screen displays the structured feedback cleanly.
 6. Vocabulary progress is saved in `localStorage`.
-7. A Roadmap screen shows Today / Tomorrow / 3 Days / 7 Days tasks computed from saved progress.
+7. A lightweight roadmap shows the next speaking, reading, and writing tasks computed from saved progress.
 8. `npm run build` passes.
 9. All changes are in feature branches and PRs; `main` is never pushed directly.
 

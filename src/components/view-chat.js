@@ -22,6 +22,7 @@ import {
   FunctionCallDefinition,
 } from "../lib/gemini-live/geminilive.js";
 import { AudioStreamer, AudioPlayer } from "../lib/gemini-live/mediaUtils.js";
+import { recordCompletedSession, getLearningDashboard } from "../data/user-learning.js";
 
 class ViewChat extends HTMLElement {
   constructor() {
@@ -44,6 +45,10 @@ class ViewChat extends HTMLElement {
 
   set mode(value) {
     this._mode = value;
+  }
+
+  set targetWords(value) {
+    this._targetWords = Array.isArray(value) ? value : [];
   }
 
   connectedCallback() {
@@ -375,7 +380,31 @@ class ViewChat extends HTMLElement {
             type: "ARRAY",
             items: { type: "STRING" },
             description:
-              "List of 3 constructive feedback points or compliments in English.",
+              "List of 3 constructive feedback points or compliments in the user's native language.",
+          },
+          used_target_words: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Target words the user successfully used during the session.",
+          },
+          missed_target_words: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Target words the user should practice again soon.",
+          },
+          mistakes: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Short mistake notes: grammar, vocabulary, sentence structure, or hesitation.",
+          },
+          next_practice: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Simple next tasks across speaking, reading, and writing.",
+          },
+          level_estimate: {
+            type: "STRING",
+            description: "Estimated learner level after the session, e.g. A1, A2, B1.",
           },
         },
         required: ["score", "feedback_pointers"],
@@ -409,10 +438,18 @@ class ViewChat extends HTMLElement {
         if (this.audioPlayer) this.audioPlayer.interrupt();
 
         // Navigate to summary
+        const session = recordCompletedSession(args);
+        const dashboard = getLearningDashboard();
         const result = {
           score: args.score.toString(),
           level: level,
-          notes: args.feedback_pointers,
+          notes: session.notes,
+          usedTargetWords: session.usedTargetWords,
+          missedTargetWords: session.missedTargetWords,
+          mistakes: session.mistakes,
+          nextPractice: session.nextPractice,
+          levelEstimate: session.levelEstimate,
+          roadmap: dashboard.plan,
         };
 
         this.dispatchEvent(
@@ -515,6 +552,8 @@ class ViewChat extends HTMLElement {
             ? this._mission.title
             : "General Conversation";
           const missionDesc = this._mission ? this._mission.desc : "";
+          const targetWords = this._targetWords && this._targetWords.length ? this._targetWords : getLearningDashboard().plan.focusWords;
+          const targetWordText = targetWords.join(', ');
           const targetRole = this._mission
             ? this._mission.target_role || "a local native speaker"
             : "a conversational partner";
@@ -527,6 +566,7 @@ class ViewChat extends HTMLElement {
 ROLEPLAY INSTRUCTION:
 You are acting as **${targetRole}**, a native speaker of ${language}.
 The user is a language learner (native speaker of ${fromLanguage}) trying to: "${missionTitle}" (${missionDesc}).
+Target practice words/topics for this session: ${targetWordText}.
 Your goal is to be a PROACTIVE LANGUAGE MENTOR while staying in character as ${targetRole}.
 
 TEACHING PROTOCOL:
@@ -535,6 +575,7 @@ TEACHING PROTOCOL:
 3. **Mini-Checks**: Occasionally (every 3-4 turns), ask the user a quick "How would you say...?" question in ${fromLanguage} related to the mission to test their recall.
 4. **Scaffolding**: If the user is hesitant, provide the start of a sentence in ${language} or give them two options to choose from to keep the momentum.
 5. **Mixed-Language Support**: Use ${fromLanguage} for teaching moments, but always pivot back to ${language} to maintain the immersive feel.
+6. **Simple multi-skill loop**: Keep the app simple, but include speaking first, then recommend one reading and one writing task in the roadmap.
 
 INTERACTION GUIDELINES:
 1. Prioritize the flow of conversation—don't let the teaching feel like a lecture.
@@ -544,8 +585,9 @@ MISSION COMPLETION:
 When the user has successfully achieved the mission objective:
 1. Give a warm congratulatory message in ${language}, then translate the praise into ${fromLanguage}.
 2. THEN call the "complete_mission" tool.
-3. Set 'score' to 0 (Zero) as this is a learning-focused practice session.
+3. Score the user's actual English level from 1 to 3.
 4. Provide 3 specific takeaways (grammar tips or new words) in the feedback list in ${fromLanguage}.
+5. Fill used_target_words, missed_target_words, mistakes, next_practice, and level_estimate so the roadmap can adapt after every session.
 `;
           } else {
             // Immersive Mode Prompt (Default)
@@ -553,6 +595,7 @@ When the user has successfully achieved the mission objective:
 ROLEPLAY INSTRUCTION:
 You are acting as **${targetRole}**, a native speaker of ${language}.
 The user is a language learner (native speaker of ${fromLanguage}) trying to: "${missionTitle}" (${missionDesc}).
+Target practice words/topics for this session: ${targetWordText}.
 Your goal is to play your role (${targetRole}) naturally. Do not act as an AI assistant. Act as the person.
 Speak in the accent and tone of the role.
 
@@ -575,6 +618,7 @@ When the user has successfully achieved the mission objective declared in the sc
 2. THEN call the "complete_mission" tool.
 3. Assign a score based on strict criteria: 1 for struggling/English reliance (Tiro), 2 for capable but imperfect (Proficiens), 3 for native-level fluency (Peritus).
 4. Provide 3 specific pointers or compliments in the feedback list (in the user's native language: ${fromLanguage}).
+5. Fill used_target_words, missed_target_words, mistakes, next_practice, and level_estimate so the roadmap can adapt after every session.
 `;
           }
 
