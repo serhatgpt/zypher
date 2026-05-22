@@ -313,7 +313,7 @@ button {
 
 .zypher-task {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
+  grid-template-columns: 90px minmax(0, 1fr) auto;
   gap: var(--spacing-sm);
   padding: 10px 12px;
   border-radius: var(--radius-md);
@@ -324,6 +324,16 @@ button {
 .zypher-task strong {
   color: var(--color-accent-secondary);
   text-transform: capitalize;
+}
+
+.zypher-mini-btn {
+  align-self: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(163, 177, 138, 0.14);
+  color: var(--color-accent-primary);
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 .zypher-summary ul {

@@ -36,6 +36,21 @@ def test_word_creation_generates_learning_card_and_roadmap_items():
         assert roadmap[0]['title']
 
 
+def test_roadmap_completion_hides_item_from_open_roadmap():
+    with tempfile.NamedTemporaryFile() as tmp:
+        db = LearningDB(tmp.name)
+        user = db.create_user('serhat@example.com', 'secret123')
+        db.create_word(user['id'], 'although', build_fallback_learning_plan('although', 'A2'))
+        roadmap = db.list_roadmap(user['id'])
+
+        completed = db.complete_roadmap_item(user['id'], roadmap[0]['id'])
+        remaining = db.list_roadmap(user['id'])
+
+        assert completed['status'] == 'completed'
+        assert roadmap[0]['id'] not in [item['id'] for item in remaining]
+        assert len(remaining) == len(roadmap) - 1
+
+
 def test_practice_session_updates_mastery_and_adds_next_items():
     with tempfile.NamedTemporaryFile() as tmp:
         db = LearningDB(tmp.name)

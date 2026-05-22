@@ -205,6 +205,22 @@ class LearningDB:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def complete_roadmap_item(self, user_id: int, item_id: int) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute(
+                'SELECT * FROM roadmap_items WHERE id = ? AND user_id = ?',
+                (item_id, user_id),
+            ).fetchone()
+            if not row:
+                raise ValueError('Roadmap item not found')
+            conn.execute(
+                "UPDATE roadmap_items SET status = 'completed' WHERE id = ? AND user_id = ?",
+                (item_id, user_id),
+            )
+            completed = dict(row)
+            completed['status'] = 'completed'
+            return completed
+
     def record_practice_session(self, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         now = _utcnow()
         score = int(payload.get('score') or 0)

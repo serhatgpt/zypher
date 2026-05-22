@@ -216,6 +216,15 @@ async def get_learning_roadmap(user=Depends(get_current_user)):
     return {"roadmap": learning_db.list_roadmap(user["id"])}
 
 
+@app.post("/api/learning/roadmap/{item_id}/complete")
+async def complete_learning_roadmap_item(item_id: int, user=Depends(get_current_user)):
+    try:
+        item = learning_db.complete_roadmap_item(user["id"], item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"item": item, "roadmap": learning_db.list_roadmap(user["id"])}
+
+
 @app.post("/api/learning/practice-sessions")
 async def create_practice_session(request: Request, user=Depends(get_current_user)):
     data = await request.json()

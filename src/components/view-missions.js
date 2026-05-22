@@ -16,20 +16,45 @@
 
 import missionsData from '../data/missions.json';
 import { addWord, getLearningDashboard, recordSkillPractice, syncLearningStateFromDb } from '../data/user-learning.js';
-import { clearAuth, createWordInDb, getAuthEmail, getAuthToken, getLearningMe, recordPracticeInDb, registerOrLogin } from '../data/learning-api.js';
+import { clearAuth, completeRoadmapItemInDb, createWordInDb, getAuthEmail, getAuthToken, getLearningMe, recordPracticeInDb, registerOrLogin } from '../data/learning-api.js';
 
 class ViewMissions extends HTMLElement {
   connectedCallback() {
     const dashboard = getLearningDashboard();
     const authEmail = getAuthEmail();
     const isDbConnected = Boolean(getAuthToken());
-    const focusWords = dashboard.plan.focusWords.filter(word => word !== 'daily English');
-    const roadmapHtml = dashboard.plan.tasks.map(task => `
+    if (isDbConnected && !this.dbState && !this.loadingDbState) {
+      this.loadingDbState = true;
+      getLearningMe()
+        .then((dbState) => {
+          this.dbState = dbState;
+          syncLearningStateFromDb(dbState);
+          this.loadingDbState = false;
+          this.connectedCallback();
+        })
+        .catch((error) => {
+          console.warn('Learning DB hydration skipped', error);
+          this.loadingDbState = false;
+        });
+    }
+    const dbRoadmap = this.dbState?.roadmap || [];
+    const roadmapTasks = isDbConnected && dbRoadmap.length
+      ? dbRoadmap.map(item => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        description: item.due_label || item.term || '',
+        isDb: true,
+      }))
+      : dashboard.plan.tasks;
+    const roadmapHtml = roadmapTasks.map(task => `
       <div class="zypher-task">
         <strong>${task.type}</strong>
-        <span>${task.title}</span>
+        <span>${task.title}${task.description ? ` · ${task.description}` : ''}</span>
+        ${task.isDb ? `<button class="zypher-mini-btn" data-roadmap-id="${task.id}" type="button">Tamamlandı</button>` : ''}
       </div>
     `).join('');
+    const focusWords = dashboard.plan.focusWords.filter(word => word !== 'daily English');
     const wordChipsHtml = dashboard.state.words.length
       ? dashboard.state.words.map(word => `
         <span class="zypher-chip">${word.term} · ${word.mastery}% · ${word.nextReviewLabel}</span>
@@ -419,6 +444,7 @@ class ViewMissions extends HTMLElement {
         authStatus.textContent = 'Bağlanıyor...';
         await registerOrLogin(email, password, mode);
         const dbState = await getLearningMe();
+        this.dbState = dbState;
         syncLearningStateFromDb(dbState);
         this.connectedCallback();
       } catch (error) {
@@ -437,6 +463,7 @@ class ViewMissions extends HTMLElement {
     }
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => {
+        this.dbState = null;
         clearAuth();
         this.connectedCallback();
       });
@@ -451,12 +478,28 @@ class ViewMissions extends HTMLElement {
       addWord(term);
       if (getAuthToken()) {
         try {
-          await createWordInDb(term, dashboard.plan.level);
+          const dbState = await createWordInDb(term, dashboard.plan.level);
+          this.dbState = { ...this.dbState, words: [dbState.word, ...(this.dbState?.words || [])], roadmap: dbState.roadmap };
+          syncLearningStateFromDb(this.dbState);
         } catch (error) {
           authStatus.textContent = `DB kaydı olmadı, local kaydedildi: ${error.message}`;
         }
       }
       this.connectedCallback();
+    });
+
+    const completeButtons = this.querySelectorAll('[data-roadmap-id]');
+    completeButtons.forEach((button) => {
+      button.addEventListener('click', async () => {
+        try {
+          button.textContent = 'Kaydediliyor...';
+          const dbState = await completeRoadmapItemInDb(button.dataset.roadmapId);
+          this.dbState = { ...this.dbState, roadmap: dbState.roadmap };
+          this.connectedCallback();
+        } catch (error) {
+          authStatus.textContent = `Roadmap güncellenemedi: ${error.message}`;
+        }
+      });
     });
 
     const skillStatus = this.querySelector('#skill-status');
@@ -469,13 +512,14 @@ class ViewMissions extends HTMLElement {
       recordSkillPractice(payload);
       if (getAuthToken()) {
         try {
-          await recordPracticeInDb({
+          const dbState = await recordPracticeInDb({
             type: 'reading',
             score: 0,
             used_target_words: dashboard.plan.focusWords,
             feedback: ['Reading practice completed'],
             next_practice: [`Write 3 sentences with ${dashboard.plan.focusWords[0]}`],
           });
+          this.dbState = { ...this.dbState, words: dbState.words, roadmap: dbState.roadmap };
         } catch (error) {
           console.warn('Reading sync skipped', error);
         }
@@ -497,13 +541,14 @@ class ViewMissions extends HTMLElement {
       recordSkillPractice(payload);
       if (getAuthToken()) {
         try {
-          await recordPracticeInDb({
+          const dbState = await recordPracticeInDb({
             type: 'writing',
             score: 0,
             used_target_words: dashboard.plan.focusWords,
             feedback: ['Writing practice saved'],
             next_practice: [`Use ${dashboard.plan.focusWords[0]} in speaking`],
           });
+          this.dbState = { ...this.dbState, words: dbState.words, roadmap: dbState.roadmap };
         } catch (error) {
           console.warn('Writing sync skipped', error);
         }

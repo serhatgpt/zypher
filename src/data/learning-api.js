@@ -51,6 +51,12 @@ export async function getLearningMe() {
   return requestJson('/api/learning/me');
 }
 
+export async function completeRoadmapItemInDb(itemId) {
+  return requestJson(`/api/learning/roadmap/${itemId}/complete`, {
+    method: 'POST',
+  });
+}
+
 export async function recordPracticeInDb(payload) {
   return requestJson('/api/learning/practice-sessions', {
     method: 'POST',
