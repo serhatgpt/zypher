@@ -231,3 +231,170 @@ button {
 .fade-in {
   animation: fadeIn 0.7s ease-out forwards;
 }
+
+.zypher-panel {
+  max-width: 900px;
+  margin: 0 auto var(--spacing-xl) auto;
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.zypher-panel h2 {
+  margin-bottom: var(--spacing-xs);
+}
+
+.zypher-kicker {
+  margin: 0 0 var(--spacing-xs) 0;
+  color: var(--color-accent-primary);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.zypher-word-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+}
+
+.zypher-auth-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: var(--spacing-sm);
+}
+
+.zypher-auth-form input,
+.zypher-word-form input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: var(--glass-border);
+  background: var(--color-bg);
+  color: var(--color-text-main);
+  font: inherit;
+}
+
+.zypher-auth-form button,
+.zypher-secondary-btn,
+.zypher-word-form button {
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-primary);
+  color: #fff;
+  font-weight: 800;
+}
+
+.zypher-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.zypher-chip {
+  padding: 8px 12px;
+  border-radius: var(--radius-full);
+  border: var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+}
+
+.zypher-chip.muted {
+  color: var(--color-text-sub);
+}
+
+.zypher-roadmap {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.zypher-task {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: var(--glass-border);
+}
+
+.zypher-task strong {
+  color: var(--color-accent-secondary);
+  text-transform: capitalize;
+}
+
+.zypher-mini-btn {
+  align-self: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(163, 177, 138, 0.14);
+  color: var(--color-accent-primary);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.zypher-summary ul {
+  color: var(--color-text-sub);
+}
+
+.zypher-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.zypher-skill-card {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: var(--glass-border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.zypher-skill-card strong {
+  color: var(--color-accent-primary);
+  font-size: 1.05rem;
+}
+
+.zypher-skill-card p,
+.zypher-skill-card li {
+  font-size: 0.95rem;
+}
+
+.zypher-skill-card textarea {
+  width: 100%;
+  margin: var(--spacing-sm) 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: var(--glass-border);
+  background: var(--color-bg);
+  color: var(--color-text-main);
+  font: inherit;
+  resize: vertical;
+}
+
+.zypher-skill-card button {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-secondary);
+  color: var(--color-bg);
+  font-weight: 800;
+}
+
+.zypher-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--color-accent-primary);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .zypher-word-form,
+  .zypher-auth-form,
+  .zypher-task,
+  .zypher-skill-grid {
+    grid-template-columns: 1fr;
+  }
+}

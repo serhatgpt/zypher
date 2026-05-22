@@ -98,8 +98,22 @@ class ViewSummary extends HTMLElement {
             <div class="card" style="text-align: left;">
               <h4 style="border-bottom: 2px solid var(--color-bg); padding-bottom: var(--spacing-sm);">Feedback</h4>
               <ul style="padding-left: var(--spacing-lg); color: var(--color-text-sub);">
-                ${this._result.notes.map(note => `<li>${note}</li>`).join('')}
+                ${(this._result.notes || []).map(note => `<li>${note}</li>`).join('')}
               </ul>
+            </div>
+
+            <div class="card zypher-summary" style="text-align: left; margin-top: var(--spacing-md);">
+              <h4>Adaptive Roadmap</h4>
+              <p><strong>Seviye tahmini:</strong> ${this._result.levelEstimate || this._result.roadmap?.level || 'A2'}</p>
+              <p><strong>Kullanılan kelimeler:</strong> ${(this._result.usedTargetWords || []).join(', ') || 'Henüz yok'}</p>
+              <p><strong>Tekrar edilecekler:</strong> ${(this._result.missedTargetWords || []).join(', ') || 'Yok'}</p>
+              <div class="zypher-roadmap">
+                ${(this._result.roadmap?.tasks || []).map(task => `
+                  <div class="zypher-task"><strong>${task.type}</strong><span>${task.title}</span></div>
+                `).join('')}
+              </div>
+              ${(this._result.mistakes || []).length ? `<h4>Hata notları</h4><ul>${this._result.mistakes.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
+              ${(this._result.nextPractice || []).length ? `<h4>Sıradaki pratik</h4><ul>${this._result.nextPractice.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
             </div>
 
             <div style="flex: 1;"></div>

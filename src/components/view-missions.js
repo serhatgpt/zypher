@@ -15,9 +15,52 @@
  */
 
 import missionsData from '../data/missions.json';
+import { addWord, getLearningDashboard, recordSkillPractice, syncLearningStateFromDb } from '../data/user-learning.js';
+import { clearAuth, completeRoadmapItemInDb, createWordInDb, getAuthEmail, getAuthToken, getLearningMe, recordPracticeInDb, registerOrLogin } from '../data/learning-api.js';
 
 class ViewMissions extends HTMLElement {
   connectedCallback() {
+    const dashboard = getLearningDashboard();
+    const authEmail = getAuthEmail();
+    const isDbConnected = Boolean(getAuthToken());
+    if (isDbConnected && !this.dbState && !this.loadingDbState) {
+      this.loadingDbState = true;
+      getLearningMe()
+        .then((dbState) => {
+          this.dbState = dbState;
+          syncLearningStateFromDb(dbState);
+          this.loadingDbState = false;
+          this.connectedCallback();
+        })
+        .catch((error) => {
+          console.warn('Learning DB hydration skipped', error);
+          this.loadingDbState = false;
+        });
+    }
+    const dbRoadmap = this.dbState?.roadmap || [];
+    const roadmapTasks = isDbConnected && dbRoadmap.length
+      ? dbRoadmap.map(item => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        description: item.due_label || item.term || '',
+        isDb: true,
+      }))
+      : dashboard.plan.tasks;
+    const roadmapHtml = roadmapTasks.map(task => `
+      <div class="zypher-task">
+        <strong>${task.type}</strong>
+        <span>${task.title}${task.description ? ` · ${task.description}` : ''}</span>
+        ${task.isDb ? `<button class="zypher-mini-btn" data-roadmap-id="${task.id}" type="button">Tamamlandı</button>` : ''}
+      </div>
+    `).join('');
+    const focusWords = dashboard.plan.focusWords.filter(word => word !== 'daily English');
+    const wordChipsHtml = dashboard.state.words.length
+      ? dashboard.state.words.map(word => `
+        <span class="zypher-chip">${word.term} · ${word.mastery}% · ${word.nextReviewLabel}</span>
+      `).join('')
+      : '<span class="zypher-chip muted">Henüz kelime yok</span>';
+
     const options = `
             <option>🇬🇧 English</option>
             <option>🇩🇪 German</option>
@@ -178,9 +221,62 @@ class ViewMissions extends HTMLElement {
             </div>
         </div>
 
+        <section class="zypher-panel glass-panel">
+          <div>
+            <p class="zypher-kicker">Zypher Account</p>
+            <h2>Basit giriş</h2>
+            <p>${isDbConnected ? `${authEmail} ile DB’ye bağlısın.` : 'Email + şifre ile giriş yap; kelimeler DB’ye kaydolsun. Giriş yapmadan local demo çalışır.'}</p>
+          </div>
+          ${isDbConnected ? `
+            <button id="logout-btn" class="zypher-secondary-btn" type="button">Çıkış yap</button>
+          ` : `
+            <form id="auth-form" class="zypher-auth-form">
+              <input id="auth-email" type="email" placeholder="email" autocomplete="email" />
+              <input id="auth-password" type="password" placeholder="şifre" autocomplete="current-password" />
+              <button data-mode="login" type="submit">Giriş</button>
+              <button data-mode="register" type="button" id="register-btn">Kayıt</button>
+            </form>
+          `}
+          <p id="auth-status" class="zypher-status"></p>
+        </section>
+
+        <section class="zypher-panel glass-panel">
+          <div>
+            <p class="zypher-kicker">Zypher Roadmap</p>
+            <h2>Basit plan, düzenli adaptasyon</h2>
+            <p>Kelime ekle; speaking, reading ve writing görevleri İngilizcene göre değişsin.</p>
+          </div>
+          <form id="word-form" class="zypher-word-form">
+            <input id="word-input" placeholder="Kelime/konu ekle: although, job interview..." autocomplete="off" />
+            <button type="submit">Ekle</button>
+          </form>
+          <div class="zypher-chip-row">${wordChipsHtml}</div>
+          <div class="zypher-roadmap">
+            <div><strong>Seviye tahmini:</strong> ${dashboard.plan.level}</div>
+            ${roadmapHtml}
+          </div>
+          <div class="zypher-skill-grid">
+            <article class="zypher-skill-card">
+              <strong>Reading</strong>
+              <p>${dashboard.readingExercise.paragraph}</p>
+              <ul>
+                ${dashboard.readingExercise.questions.map(question => `<li>${question}</li>`).join('')}
+              </ul>
+              <button id="reading-done" type="button">Reading yaptım</button>
+            </article>
+            <article class="zypher-skill-card">
+              <strong>Writing</strong>
+              <p>${dashboard.writingExercise.prompt}</p>
+              <textarea id="writing-response" rows="4" placeholder="Cümlelerini buraya yaz..."></textarea>
+              <button id="writing-save" type="button">Writing kaydet</button>
+            </article>
+          </div>
+          <p id="skill-status" class="zypher-status"></p>
+        </section>
+
         <div style="margin-bottom: var(--spacing-md); text-align: center;">
             <h2 style="font-size: 2.5rem; letter-spacing: -0.03em; margin-bottom: var(--spacing-xs);">Choose Your Quest</h2>
-            <p style="opacity: 0.7; font-size: 1.1rem;">Select a scenario to begin your immersive practice</p>
+            <p style="opacity: 0.7; font-size: 1.1rem;">Select a simple practice mission. Focus words: ${focusWords.join(', ') || 'add a word first'}</p>
         </div>
 
         <div class="missions-list mission-grid">
@@ -279,27 +375,25 @@ class ViewMissions extends HTMLElement {
     if (savedLang) {
       toSelect.value = savedLang;
     } else {
-      // Default practice to French if first time to avoid English/English default
       const options = Array.from(toSelect.options);
-      const frenchOption = options.find(o => o.text.includes('French'));
-      if (frenchOption) toSelect.value = frenchOption.text;
+      const englishOption = options.find(o => o.text.includes('English'));
+      if (englishOption) toSelect.value = englishOption.text;
     }
 
     // Default From language to English if not set
     if (savedFromLang) {
       fromSelect.value = savedFromLang;
     } else {
-      // Try to find English
       const options = Array.from(fromSelect.options);
-      const englishOption = options.find(o => o.text.includes('English'));
-      if (englishOption) fromSelect.value = englishOption.text;
+      const turkishOption = options.find(o => o.text.includes('Turkish'));
+      if (turkishOption) fromSelect.value = turkishOption.text;
     }
 
 
     // Mode Logic
     const modeImmersive = this.querySelector('#mode-immersive');
     const modeTeacher = this.querySelector('#mode-teacher');
-    let currentMode = localStorage.getItem('immergo_mode') || 'immergo_immersive'; // Default to immersive
+    let currentMode = localStorage.getItem('immergo_mode') || 'immergo_teacher'; // Default to teacher for adaptive feedback
 
     const updateModeUI = () => {
       const activeBorder = 'var(--color-accent-primary)';
@@ -337,6 +431,131 @@ class ViewMissions extends HTMLElement {
     });
 
     updateModeUI();
+
+    const authStatus = this.querySelector('#auth-status');
+    const authForm = this.querySelector('#auth-form');
+    const registerBtn = this.querySelector('#register-btn');
+    const logoutBtn = this.querySelector('#logout-btn');
+
+    const submitAuth = async (mode) => {
+      try {
+        const email = this.querySelector('#auth-email').value;
+        const password = this.querySelector('#auth-password').value;
+        authStatus.textContent = 'Bağlanıyor...';
+        await registerOrLogin(email, password, mode);
+        const dbState = await getLearningMe();
+        this.dbState = dbState;
+        syncLearningStateFromDb(dbState);
+        this.connectedCallback();
+      } catch (error) {
+        authStatus.textContent = error.message;
+      }
+    };
+
+    if (authForm) {
+      authForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitAuth('login');
+      });
+    }
+    if (registerBtn) {
+      registerBtn.addEventListener('click', () => submitAuth('register'));
+    }
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        this.dbState = null;
+        clearAuth();
+        this.connectedCallback();
+      });
+    }
+
+    const wordForm = this.querySelector('#word-form');
+    const wordInput = this.querySelector('#word-input');
+    wordForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const term = wordInput.value;
+      if (!term.trim()) return;
+      addWord(term);
+      if (getAuthToken()) {
+        try {
+          const dbState = await createWordInDb(term, dashboard.plan.level);
+          this.dbState = { ...this.dbState, words: [dbState.word, ...(this.dbState?.words || [])], roadmap: dbState.roadmap };
+          syncLearningStateFromDb(this.dbState);
+        } catch (error) {
+          authStatus.textContent = `DB kaydı olmadı, local kaydedildi: ${error.message}`;
+        }
+      }
+      this.connectedCallback();
+    });
+
+    const completeButtons = this.querySelectorAll('[data-roadmap-id]');
+    completeButtons.forEach((button) => {
+      button.addEventListener('click', async () => {
+        try {
+          button.textContent = 'Kaydediliyor...';
+          const dbState = await completeRoadmapItemInDb(button.dataset.roadmapId);
+          this.dbState = { ...this.dbState, roadmap: dbState.roadmap };
+          this.connectedCallback();
+        } catch (error) {
+          authStatus.textContent = `Roadmap güncellenemedi: ${error.message}`;
+        }
+      });
+    });
+
+    const skillStatus = this.querySelector('#skill-status');
+    this.querySelector('#reading-done').addEventListener('click', async () => {
+      const payload = {
+        type: 'reading',
+        focusWords: dashboard.plan.focusWords,
+        response: dashboard.readingExercise.paragraph,
+      };
+      recordSkillPractice(payload);
+      if (getAuthToken()) {
+        try {
+          const dbState = await recordPracticeInDb({
+            type: 'reading',
+            score: 0,
+            used_target_words: dashboard.plan.focusWords,
+            feedback: ['Reading practice completed'],
+            next_practice: [`Write 3 sentences with ${dashboard.plan.focusWords[0]}`],
+          });
+          this.dbState = { ...this.dbState, words: dbState.words, roadmap: dbState.roadmap };
+        } catch (error) {
+          console.warn('Reading sync skipped', error);
+        }
+      }
+      skillStatus.textContent = 'Reading kaydedildi. Roadmap bunu dikkate alacak.';
+    });
+
+    this.querySelector('#writing-save').addEventListener('click', async () => {
+      const response = this.querySelector('#writing-response').value;
+      if (!response.trim()) {
+        skillStatus.textContent = 'Önce kısa birkaç cümle yaz.';
+        return;
+      }
+      const payload = {
+        type: 'writing',
+        focusWords: dashboard.plan.focusWords,
+        response,
+      };
+      recordSkillPractice(payload);
+      if (getAuthToken()) {
+        try {
+          const dbState = await recordPracticeInDb({
+            type: 'writing',
+            score: 0,
+            used_target_words: dashboard.plan.focusWords,
+            feedback: ['Writing practice saved'],
+            next_practice: [`Use ${dashboard.plan.focusWords[0]} in speaking`],
+          });
+          this.dbState = { ...this.dbState, words: dbState.words, roadmap: dbState.roadmap };
+        } catch (error) {
+          console.warn('Writing sync skipped', error);
+        }
+      }
+      skillStatus.textContent = 'Writing kaydedildi. Bir sonraki pratikte tekrar bakacağız.';
+      this.querySelector('#writing-response').value = '';
+    });
 
     // Add change listeners to persist immediately
     fromSelect.addEventListener('change', () => {
@@ -423,7 +642,8 @@ class ViewMissions extends HTMLElement {
             mission: mission,
             language: selectedToLang,
             fromLanguage: selectedFromLang,
-            mode: selectedMode
+            mode: selectedMode,
+            targetWords: getLearningDashboard().plan.focusWords.filter(word => word !== 'daily English')
           }
         }));
       });

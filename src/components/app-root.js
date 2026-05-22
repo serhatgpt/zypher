@@ -141,6 +141,7 @@ class AppRoot extends HTMLElement {
             if (e.detail.language) this.state.selectedLanguage = e.detail.language;
             if (e.detail.fromLanguage) this.state.selectedFromLanguage = e.detail.fromLanguage;
             if (e.detail.mode) this.state.selectedMode = e.detail.mode;
+            if (e.detail.targetWords) this.state.targetWords = e.detail.targetWords;
             if (e.detail.result) this.state.sessionResult = e.detail.result;
             this.render();
         });
@@ -264,6 +265,7 @@ class AppRoot extends HTMLElement {
                 currentView.language = this.state.selectedLanguage;
                 currentView.fromLanguage = this.state.selectedFromLanguage;
                 currentView.mode = this.state.selectedMode;
+                currentView.targetWords = this.state.targetWords || [];
                 break;
             case 'summary':
                 currentView = document.createElement('view-summary');
