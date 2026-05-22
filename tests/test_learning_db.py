@@ -1,3 +1,4 @@
+import datetime as dt
 import tempfile
 
 from server.learning_db import LearningDB
@@ -73,3 +74,36 @@ def test_practice_session_updates_mastery_and_adds_next_items():
         assert session['score'] == 3
         assert words[0]['mastery_score'] > 25
         assert any('Write 3 sentences' in item['title'] for item in roadmap)
+
+
+def test_words_use_real_iso_review_dates_and_due_filtering():
+    with tempfile.NamedTemporaryFile() as tmp:
+        db = LearningDB(tmp.name)
+        user = db.create_user('serhat@example.com', 'secret123')
+        db.create_word(user['id'], 'although', build_fallback_learning_plan('although', 'A2'))
+
+        word = db.list_words(user['id'])[0]
+        created_due = dt.datetime.fromisoformat(word['next_review_at'])
+        assert created_due.tzinfo is not None
+        assert word['is_due'] is True
+
+        db.record_practice_session(user['id'], {
+            'type': 'speaking',
+            'score': 4,
+            'used_target_words': ['although'],
+            'missed_target_words': [],
+        })
+
+        reviewed_word = db.list_words(user['id'])[0]
+        next_review_at = dt.datetime.fromisoformat(reviewed_word['next_review_at'])
+        assert next_review_at > dt.datetime.now(dt.UTC) + dt.timedelta(days=2)
+        assert reviewed_word['review_interval_days'] == 3
+        assert reviewed_word['is_due'] is False
+        assert db.list_due_words(user['id']) == []
+
+        with db.connect() as conn:
+            conn.execute(
+                'UPDATE words SET next_review_at = ? WHERE id = ?',
+                ((dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)).isoformat(), reviewed_word['id']),
+            )
+        assert [item['term'] for item in db.list_due_words(user['id'])] == ['although']

@@ -192,6 +192,7 @@ async def get_learning_me(user=Depends(get_current_user)):
     return {
         "user": user,
         "words": learning_db.list_words(user["id"]),
+        "due_words": learning_db.list_due_words(user["id"]),
         "roadmap": learning_db.list_roadmap(user["id"]),
     }
 
@@ -207,6 +208,7 @@ async def create_learning_word(request: Request, user=Depends(get_current_user))
     return {
         "word": word,
         "learning_plan": plan,
+        "due_words": learning_db.list_due_words(user["id"]),
         "roadmap": learning_db.list_roadmap(user["id"]),
     }
 
@@ -232,6 +234,7 @@ async def create_practice_session(request: Request, user=Depends(get_current_use
     return {
         "session": session,
         "words": learning_db.list_words(user["id"]),
+        "due_words": learning_db.list_due_words(user["id"]),
         "roadmap": learning_db.list_roadmap(user["id"]),
     }
 

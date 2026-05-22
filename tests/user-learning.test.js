@@ -10,6 +10,7 @@ import {
   recordSkillPractice,
   syncLearningStateFromDb,
   updateWordMastery,
+  getDueWords,
 } from '../src/data/user-learning.js';
 
 function createFakeStorage(initial = {}) {
@@ -37,13 +38,16 @@ test('buildPracticePlan keeps the app simple with speaking, reading, and writing
 test('updateWordMastery raises mastery when a word is used well', () => {
   const updated = updateWordMastery(
     { term: 'although', mastery: 40, attempts: 1, successes: 0, mistakes: [] },
-    { score: 3, usedTargetWords: ['although'], missedTargetWords: [], mistakes: [] }
+    { score: 3, usedTargetWords: ['although'], missedTargetWords: [], mistakes: [] },
+    new Date('2026-01-01T00:00:00.000Z')
   );
 
   assert.equal(updated.mastery, 58);
   assert.equal(updated.attempts, 2);
   assert.equal(updated.successes, 1);
-  assert.equal(updated.nextReviewLabel, '7 gün sonra');
+  assert.equal(updated.reviewIntervalDays, 3);
+  assert.equal(updated.nextReviewAt, '2026-01-04T00:00:00.000Z');
+  assert.equal(updated.nextReviewLabel, '4 Oca');
 });
 
 test('updateWordMastery lowers/keeps mastery when the target word is missed and schedules soon', () => {
@@ -119,7 +123,9 @@ test('syncLearningStateFromDb hydrates local learning state from SQLite API shap
       meaning_tr: 'rağmen / buna rağmen',
       mastery_score: 52,
       common_mistakes: ['wrong connector'],
-      next_review_at: '3 gün sonra',
+      next_review_at: '2026-01-04T00:00:00.000Z',
+      review_interval_days: 3,
+      is_due: false,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-02T00:00:00Z',
     }],
@@ -128,5 +134,21 @@ test('syncLearningStateFromDb hydrates local learning state from SQLite API shap
   assert.equal(nextState.words.length, 1);
   assert.equal(nextState.words[0].term, 'although');
   assert.equal(nextState.words[0].mastery, 52);
-  assert.equal(nextState.words[0].nextReviewLabel, '3 gün sonra');
+  assert.equal(nextState.words[0].nextReviewAt, '2026-01-04T00:00:00.000Z');
+  assert.equal(nextState.words[0].reviewIntervalDays, 3);
+  assert.equal(nextState.words[0].isDue, false);
+});
+
+
+test('getDueWords prioritizes real due dates before weak future words', () => {
+  const words = [
+    { term: 'future', mastery: 10, nextReviewAt: '2026-01-05T00:00:00.000Z' },
+    { term: 'due', mastery: 80, nextReviewAt: '2025-12-31T23:59:00.000Z' },
+    { term: 'also due', mastery: 30, nextReviewAt: '2025-12-30T00:00:00.000Z' },
+  ];
+
+  assert.deepEqual(
+    getDueWords(words, new Date('2026-01-01T00:00:00.000Z')).map((word) => word.term),
+    ['also due', 'due']
+  );
 });

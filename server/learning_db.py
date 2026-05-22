@@ -16,6 +16,59 @@ def _utcnow() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
+def _utcnow_dt() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
+
+
+def _iso_at(days: int = 0) -> str:
+    return (_utcnow_dt() + dt.timedelta(days=days)).isoformat()
+
+
+def _parse_datetime(value: str | None) -> Optional[dt.datetime]:
+    if not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=dt.UTC)
+        return parsed
+    except ValueError:
+        # Backward compatibility for pre-ISO labels stored in older local DBs.
+        if value == 'bugün':
+            return _utcnow_dt()
+        if value == 'yarın':
+            return _utcnow_dt() + dt.timedelta(days=1)
+        if value == '3 gün sonra':
+            return _utcnow_dt() + dt.timedelta(days=3)
+        if value == '7 gün sonra':
+            return _utcnow_dt() + dt.timedelta(days=7)
+        return None
+
+
+def _review_label(next_review_at: str | None) -> str:
+    due_at = _parse_datetime(next_review_at)
+    if not due_at:
+        return 'planlanmadı'
+    today = _utcnow_dt().date()
+    due_date = due_at.date()
+    if due_date <= today:
+        return 'bugün'
+    days = (due_date - today).days
+    if days == 1:
+        return 'yarın'
+    return f'{days} gün sonra'
+
+
+def _review_interval_days(mastery: int, score: int, used: bool, missed: bool) -> int:
+    if missed or score <= 1:
+        return 1
+    if mastery >= 75 and score >= 3 and used:
+        return 7
+    if (mastery >= 45 and score >= 2 and used) or (score >= 4 and used):
+        return 3
+    return 1
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -74,6 +127,7 @@ class LearningDB:
                     examples_json TEXT NOT NULL DEFAULT '[]',
                     common_mistakes_json TEXT NOT NULL DEFAULT '[]',
                     mastery_score INTEGER NOT NULL DEFAULT 25,
+                    review_interval_days INTEGER NOT NULL DEFAULT 0,
                     next_review_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -105,6 +159,9 @@ class LearningDB:
                 );
                 '''
             )
+            columns = {row['name'] for row in conn.execute('PRAGMA table_info(words)').fetchall()}
+            if 'review_interval_days' not in columns:
+                conn.execute('ALTER TABLE words ADD COLUMN review_interval_days INTEGER NOT NULL DEFAULT 0')
 
     def create_user(self, email: str, password: str) -> dict[str, Any]:
         clean_email = email.strip().lower()
@@ -158,8 +215,8 @@ class LearningDB:
         card = plan.get('learning_card', {})
         with self.connect() as conn:
             cur = conn.execute(
-                '''INSERT INTO words(user_id, term, meaning_tr, examples_json, common_mistakes_json, mastery_score, next_review_at, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                '''INSERT INTO words(user_id, term, meaning_tr, examples_json, common_mistakes_json, mastery_score, review_interval_days, next_review_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(user_id, term) DO UPDATE SET
                      meaning_tr=excluded.meaning_tr,
                      examples_json=excluded.examples_json,
@@ -173,7 +230,8 @@ class LearningDB:
                     _json(card.get('examples', [])),
                     _json(card.get('common_mistakes', [])),
                     25,
-                    'bugün',
+                    0,
+                    now,
                     now,
                     now,
                 ),
@@ -191,6 +249,16 @@ class LearningDB:
     def list_words(self, user_id: int) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute('SELECT * FROM words WHERE user_id = ? ORDER BY updated_at DESC', (user_id,)).fetchall()
+            return [self._format_word(dict(row)) for row in rows]
+
+    def list_due_words(self, user_id: int) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                '''SELECT * FROM words
+                   WHERE user_id = ? AND datetime(next_review_at) <= datetime(?)
+                   ORDER BY datetime(next_review_at) ASC, mastery_score ASC''',
+                (user_id, _utcnow()),
+            ).fetchall()
             return [self._format_word(dict(row)) for row in rows]
 
     def list_roadmap(self, user_id: int) -> list[dict[str, Any]]:
@@ -250,16 +318,22 @@ class LearningDB:
                 row = conn.execute('SELECT * FROM words WHERE user_id = ? AND lower(term) = lower(?)', (user_id, term)).fetchone()
                 if not row:
                     continue
-                delta = 8 if term in used_words else -8
+                used_lower = {item.lower() for item in used_words if isinstance(item, str)}
+                missed_lower = {item.lower() for item in missed_words if isinstance(item, str)}
+                term_lower = term.lower() if isinstance(term, str) else ''
+                used = term_lower in used_lower
+                missed = term_lower in missed_lower
+                delta = 8 if used else -8
                 if score >= 3:
                     delta += 8
                 elif score <= 1:
                     delta -= 4
                 mastery = max(0, min(100, int(row['mastery_score']) + delta))
-                due = '7 gün sonra' if mastery >= 60 else '3 gün sonra' if mastery >= 45 else 'yarın'
+                interval_days = _review_interval_days(mastery, score, used, missed)
+                due = _iso_at(interval_days)
                 conn.execute(
-                    'UPDATE words SET mastery_score = ?, next_review_at = ?, updated_at = ? WHERE id = ?',
-                    (mastery, due, now, row['id']),
+                    'UPDATE words SET mastery_score = ?, review_interval_days = ?, next_review_at = ?, updated_at = ? WHERE id = ?',
+                    (mastery, interval_days, due, now, row['id']),
                 )
             for title in next_practice:
                 conn.execute(
@@ -272,4 +346,12 @@ class LearningDB:
     def _format_word(self, row: dict[str, Any]) -> dict[str, Any]:
         row['examples'] = _parse_json(row.pop('examples_json', None), [])
         row['common_mistakes'] = _parse_json(row.pop('common_mistakes_json', None), [])
+        parsed_due = _parse_datetime(row.get('next_review_at'))
+        if parsed_due:
+            row['next_review_at'] = parsed_due.isoformat()
+            row['is_due'] = parsed_due <= _utcnow_dt()
+        else:
+            row['is_due'] = False
+        row['next_review_label'] = _review_label(row.get('next_review_at'))
+        row['review_interval_days'] = int(row.get('review_interval_days') or 0)
         return row

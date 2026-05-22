@@ -10,6 +10,44 @@ const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value))
 
 const normalizeArray = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
 
+function normalizeDate(value, fallback = new Date()) {
+  const date = value ? new Date(value) : fallback;
+  return Number.isNaN(date.getTime()) ? fallback : date;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function formatReviewLabel(date, now = new Date()) {
+  const due = normalizeDate(date);
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startOfDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const diffDays = Math.round((startOfDue - startOfToday) / 86400000);
+  if (diffDays <= 0) return 'bugün';
+  if (diffDays === 1) return 'yarın';
+  return due.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+function calculateReviewIntervalDays(mastery, score, used, missed) {
+  if (missed || score <= 1) return 1;
+  if (mastery >= 75 && score >= 3 && used) return 7;
+  if ((mastery >= 45 && score >= 2 && used) || (score >= 4 && used)) return 3;
+  return 1;
+}
+
+export function getDueWords(words = [], now = new Date()) {
+  return normalizeArray(words)
+    .filter((word) => normalizeDate(word.nextReviewAt || word.next_review_at, now) <= now)
+    .sort((a, b) => {
+      const aDate = normalizeDate(a.nextReviewAt || a.next_review_at, now).getTime();
+      const bDate = normalizeDate(b.nextReviewAt || b.next_review_at, now).getTime();
+      return (aDate - bDate) || ((a.mastery || a.mastery_score || 0) - (b.mastery || b.mastery_score || 0));
+    });
+}
+
 export function createWord(term, extra = {}) {
   const cleanTerm = String(term || '').trim();
   return {
@@ -21,7 +59,10 @@ export function createWord(term, extra = {}) {
     successes: extra.successes || 0,
     mistakes: normalizeArray(extra.mistakes),
     lastScore: extra.lastScore || 0,
-    nextReviewLabel: extra.nextReviewLabel || 'bugün',
+    reviewIntervalDays: Number.isFinite(extra.reviewIntervalDays) ? extra.reviewIntervalDays : 0,
+    nextReviewAt: extra.nextReviewAt || new Date().toISOString(),
+    nextReviewLabel: extra.nextReviewLabel || formatReviewLabel(extra.nextReviewAt || new Date()),
+    isDue: Boolean(extra.isDue ?? (normalizeDate(extra.nextReviewAt) <= new Date())),
     createdAt: extra.createdAt || new Date().toISOString(),
     updatedAt: extra.updatedAt || new Date().toISOString(),
   };
@@ -44,8 +85,14 @@ export function createLearnerSnapshot(words = [], sessions = []) {
   if (averageMastery >= 75 && lastScore >= 3) level = 'B1';
   else if (averageMastery >= 35 || lastScore >= 2) level = 'A2';
 
-  const weakWords = [...normalizedWords]
-    .sort((a, b) => (a.mastery - b.mastery) || (b.mistakes.length - a.mistakes.length))
+  const dueWords = getDueWords(normalizedWords);
+  const weakWords = (dueWords.length ? dueWords : [...normalizedWords])
+    .sort((a, b) => {
+      if (dueWords.length) {
+        return normalizeDate(a.nextReviewAt).getTime() - normalizeDate(b.nextReviewAt).getTime();
+      }
+      return (a.mastery - b.mastery) || (b.mistakes.length - a.mistakes.length);
+    })
     .slice(0, 3);
 
   return {
@@ -121,7 +168,7 @@ export function buildWritingExercise(focusWords = ['daily English'], level = 'A1
   };
 }
 
-export function updateWordMastery(word, session) {
+export function updateWordMastery(word, session, now = new Date()) {
   const term = word.term;
   const used = normalizeArray(session.usedTargetWords).some((item) => item.toLowerCase() === term.toLowerCase());
   const missed = normalizeArray(session.missedTargetWords).some((item) => item.toLowerCase() === term.toLowerCase());
@@ -135,9 +182,8 @@ export function updateWordMastery(word, session) {
   if (missed) delta -= 5;
 
   const mastery = clamp((word.mastery || 25) + delta);
-  let nextReviewLabel = 'yarın';
-  if (mastery >= 58) nextReviewLabel = '7 gün sonra';
-  else if (mastery >= 45) nextReviewLabel = '3 gün sonra';
+  const reviewIntervalDays = calculateReviewIntervalDays(mastery, score, used, missed);
+  const nextReviewAt = addDays(now, reviewIntervalDays).toISOString();
 
   return {
     ...word,
@@ -146,8 +192,11 @@ export function updateWordMastery(word, session) {
     successes: (word.successes || 0) + (used && score >= 2 ? 1 : 0),
     mistakes: [...new Set([...normalizeArray(word.mistakes), ...normalizeArray(session.mistakes)])].slice(-6),
     lastScore: score,
-    nextReviewLabel,
-    updatedAt: new Date().toISOString(),
+    reviewIntervalDays,
+    nextReviewAt,
+    nextReviewLabel: formatReviewLabel(nextReviewAt, now),
+    isDue: false,
+    updatedAt: now.toISOString(),
   };
 }
 
@@ -234,7 +283,10 @@ export function syncLearningStateFromDb(dbState = {}, storage = globalThis.local
     note: word.meaning_tr || word.note || '',
     mastery: word.mastery_score ?? word.mastery,
     mistakes: word.common_mistakes || word.mistakes || [],
-    nextReviewLabel: word.next_review_at || word.nextReviewLabel || 'bugün',
+    nextReviewAt: word.next_review_at || word.nextReviewAt,
+    reviewIntervalDays: word.review_interval_days ?? word.reviewIntervalDays,
+    nextReviewLabel: word.next_review_label || word.nextReviewLabel,
+    isDue: word.is_due ?? word.isDue,
     createdAt: word.created_at || word.createdAt,
     updatedAt: word.updated_at || word.updatedAt,
   }));
